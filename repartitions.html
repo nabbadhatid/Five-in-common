@@ -281,6 +281,69 @@ button { font: inherit; color: inherit; }
 }
 .empty { margin: 0; padding: 40px 20px; text-align: center; color: var(--muted); }
 
+/* View switch */
+.viewbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 16px; border-top: 1px solid var(--line); }
+.seg { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.seg button {
+  padding: 6px 12px;
+  border: 0; border-radius: 6px;
+  background: none; color: var(--muted);
+  font-size: 14px; font-weight: 600;
+  cursor: pointer;
+}
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
+
+/* One-by-one view */
+.stepper {
+  display: flex; flex-direction: column; gap: 16px;
+  padding: 20px 16px;
+  border-top: 1px solid var(--line);
+  overflow: hidden;
+}
+.step-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.step-count {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(30px, 4vw, 40px);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.step-count .of { color: var(--muted); font-weight: 600; }
+.step-badge {
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: var(--hl-strong);
+  color: var(--ink);
+  font-size: 12px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .08em;
+}
+.step-range { width: 100%; margin: 0; accent-color: var(--ink); }
+.step-card {
+  display: grid;
+  grid-template-columns: minmax(0, var(--fa, 1fr)) minmax(0, var(--fb, 1fr));
+  gap: 12px;
+}
+.step-card.enter-next { animation: step-in-next .24s ease-out; }
+.step-card.enter-prev { animation: step-in-prev .24s ease-out; }
+@keyframes step-in-next { from { opacity: .2; transform: translateX(14px); } }
+@keyframes step-in-prev { from { opacity: .2; transform: translateX(-14px); } }
+.step-group { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 16px; border-radius: 10px; }
+.step-a { background: var(--a-soft); }
+.step-b { background: var(--b-soft); }
+.step-group .grp { gap: 8px; }
+.step-group .p { padding: 6px 12px; border-radius: 6px; background: var(--surface); font-size: 17px; }
+.step-nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.step-hint { font-size: 13px; color: var(--muted); text-align: center; }
+.btn:disabled { opacity: .35; cursor: default; }
+@media (max-width: 560px) {
+  .step-card { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 560px), (hover: none) {
+  .step-hint { display: none; }
+}
+
 .toast {
   position: fixed;
   left: 50%;
@@ -300,7 +363,7 @@ button { font: inherit; color: inherit; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 @media (prefers-reduced-motion: reduce) {
   .toast { transition: none; }
-  .pick.fresh { animation: none; }
+  .pick.fresh, .step-card.enter-next, .step-card.enter-prev { animation: none; }
 }
 </style>
 
@@ -353,6 +416,13 @@ button { font: inherit; color: inherit; }
           </div>
         </div>
 
+        <div class="viewbar">
+          <div class="seg" id="mode" role="group" aria-label="Affichage">
+            <button type="button" data-mode="list" aria-pressed="true">Toute la liste</button>
+            <button type="button" data-mode="step" aria-pressed="false">Une par une</button>
+          </div>
+        </div>
+
         <div class="pick" id="pick" hidden aria-live="polite">
           <div class="pick-head">
             <span class="eyebrow">Tirage au sort</span>
@@ -365,11 +435,31 @@ button { font: inherit; color: inherit; }
           </div>
         </div>
 
-        <div class="list-head" aria-hidden="true"><span></span><span class="h h-a" id="h-a"></span><span class="h h-b" id="h-b"></span></div>
-        <ol class="list" id="list"></ol>
-        <div class="more-row">
-          <span id="shown"></span>
-          <button type="button" class="btn btn-ghost" id="more"></button>
+        <div id="list-view">
+          <div class="list-head" aria-hidden="true"><span></span><span class="h h-a" id="h-a"></span><span class="h h-b" id="h-b"></span></div>
+          <ol class="list" id="list"></ol>
+          <div class="more-row">
+            <span id="shown"></span>
+            <button type="button" class="btn btn-ghost" id="more"></button>
+          </div>
+        </div>
+
+        <div class="stepper" id="step-view" hidden>
+          <div class="step-top">
+            <div class="step-count" aria-live="polite"><span class="sr">Répartition </span><span id="step-n"></span><span class="of"> / <span id="step-t"></span></span></div>
+            <span class="step-badge" id="step-badge" hidden>Tirée au sort</span>
+          </div>
+          <label class="sr" for="step-range">Aller à la répartition</label>
+          <input type="range" id="step-range" class="step-range" min="1" value="1">
+          <div class="step-card" id="step-card">
+            <div class="step-group step-a"><span class="h h-a" id="sh-a"></span><div class="grp" id="step-a"></div></div>
+            <div class="step-group step-b"><span class="h h-b" id="sh-b"></span><div class="grp" id="step-b"></div></div>
+          </div>
+          <div class="step-nav">
+            <button type="button" class="btn btn-ghost" id="prev">← Précédente</button>
+            <span class="step-hint">Flèches ← → du clavier</span>
+            <button type="button" class="btn" id="next">Suivante →</button>
+          </div>
         </div>
       </div>
       <p class="empty" id="empty" hidden>Ajoutez au moins deux noms pour voir les répartitions.</p>
@@ -391,7 +481,7 @@ button { font: inherit; color: inherit; }
   const keyOf = (s) => s.toLocaleLowerCase('fr');
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  let state = { names: SAMPLE.slice(), a: 3, labeled: false, sample: true };
+  let state = { names: SAMPLE.slice(), a: 3, labeled: false, sample: true, mode: 'list' };
   try {
     const s = JSON.parse(localStorage.getItem(KEY) || 'null');
     if (s && Array.isArray(s.names)) {
@@ -400,13 +490,15 @@ button { font: inherit; color: inherit; }
         a: Number(s.a) || 0,
         labeled: !!s.labeled,
         sample: !!s.sample,
+        mode: s.mode === 'step' ? 'step' : 'list',
       };
     }
   } catch (e) {}
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };
 
   // cursor: the combination (indices of group A) of the next row to render
-  const view = { cursor: [], shown: 0, total: 0, picked: -1 };
+  // step: the rank shown in the one-by-one view
+  const view = { cursor: [], shown: 0, total: 0, picked: -1, step: 0 };
 
   function binom(n, k) {
     if (k < 0 || k > n) return 0;
@@ -442,6 +534,19 @@ button { font: inherit; color: inherit; }
       prev = c[i];
     }
     return r;
+  }
+  // Inverse of rankComb: the k-combination of 0..n-1 at position r.
+  function unrankComb(r, n, k) {
+    const c = [];
+    let x = 0;
+    for (let i = 0; i < k; i++) {
+      for (let cnt = binom(n - 1 - x, k - 1 - i); r >= cnt; cnt = binom(n - 1 - x, k - 1 - i)) {
+        r -= cnt;
+        x++;
+      }
+      c.push(x++);
+    }
+    return c;
   }
   // Lexicographic order lists every combination containing person 0 first, and for an
   // equal split that is exactly the first half: so the unlabeled list is just a prefix.
@@ -559,10 +664,12 @@ button { font: inherit; color: inherit; }
     const res = $('results');
     res.style.setProperty('--fa', `${a}fr`);
     res.style.setProperty('--fb', `${Math.max(b, a / 2)}fr`);
-    $('h-a').textContent = `Groupe A · ${a} ${plural(a, 'personne', 'personnes')}`;
-    $('h-b').textContent = `Groupe B · ${b} ${plural(b, 'personne', 'personnes')}`;
+    $('h-a').textContent = $('sh-a').textContent = `Groupe A · ${a} ${plural(a, 'personne', 'personnes')}`;
+    $('h-b').textContent = $('sh-b').textContent = `Groupe B · ${b} ${plural(b, 'personne', 'personnes')}`;
     $('copy').textContent = T > COPY_MAX ? `Copier les ${nf.format(COPY_MAX)} premières` : 'Copier la liste';
+    view.step = 0;
     renderPage();
+    applyMode();
   }
 
   function renderPage() {
@@ -581,6 +688,50 @@ button { font: inherit; color: inherit; }
     $('shown').textContent = rest > 0
       ? `${nf.format(view.shown)} affichées sur ${nf.format(view.total)}`
       : `${plural(view.total, 'Répartition affichée', `Les ${nf.format(view.total)} répartitions sont affichées`)}`;
+  }
+
+  function renderStep(dir) {
+    const n = state.names.length, T = view.total, r = view.step;
+    const [A, B] = groupsOf(unrankComb(r, n, state.a));
+    fillGroup($('step-a'), A, 'a');
+    fillGroup($('step-b'), B, 'b');
+    $('step-n').textContent = nf.format(r + 1);
+    $('step-t').textContent = nf.format(T);
+    const range = $('step-range');
+    range.max = T;
+    range.value = r + 1;
+    range.hidden = T < 2;
+    const focused = document.activeElement;
+    $('prev').disabled = r <= 0;
+    $('next').disabled = r >= T - 1;
+    // Keep keyboard focus on a usable button when one end of the list is reached.
+    if (focused === $('prev') && $('prev').disabled && !$('next').disabled) $('next').focus();
+    if (focused === $('next') && $('next').disabled && !$('prev').disabled) $('prev').focus();
+    $('step-badge').hidden = r !== view.picked;
+    if (dir && !reduceMotion) {
+      const card = $('step-card');
+      card.classList.remove('enter-next', 'enter-prev');
+      void card.offsetWidth;
+      card.classList.add(dir > 0 ? 'enter-next' : 'enter-prev');
+    }
+  }
+
+  function applyMode() {
+    const step = state.mode === 'step';
+    $('list-view').hidden = step;
+    $('step-view').hidden = !step;
+    $('mode').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === state.mode)));
+    if (step) {
+      $('pick').hidden = true;
+      renderStep(0);
+    }
+  }
+
+  function go(delta) {
+    const r = Math.min(view.total - 1, Math.max(0, view.step + delta));
+    if (r === view.step) return;
+    view.step = r;
+    renderStep(delta);
   }
 
   function update() {
@@ -690,6 +841,28 @@ button { font: inherit; color: inherit; }
 
   $('more').addEventListener('click', renderPage);
 
+  $('mode').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-mode]');
+    if (!btn || btn.dataset.mode === state.mode) return;
+    state.mode = btn.dataset.mode;
+    save();
+    applyMode();
+  });
+
+  $('prev').addEventListener('click', () => go(-1));
+  $('next').addEventListener('click', () => go(1));
+  $('step-range').addEventListener('input', (e) => {
+    view.step = Number(e.target.value) - 1;
+    renderStep(0);
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (state.mode !== 'step' || $('results-body').hidden || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+    if (e.key === 'ArrowRight') { e.preventDefault(); go(1); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); }
+  });
+
   $('draw').addEventListener('click', () => {
     const n = state.names.length, a = state.a;
     const idx = Array.from({ length: n }, (_, i) => i);
@@ -709,6 +882,13 @@ button { font: inherit; color: inherit; }
     view.picked = r;
     const row = list.children[r];
     if (row) row.classList.add('picked');
+
+    const dir = r >= view.step ? 1 : -1;
+    view.step = r;
+    if (state.mode === 'step') {
+      renderStep(dir);
+      return;
+    }
 
     const [A, B] = groupsOf(combo);
     $('pick-num').textContent = `Répartition n° ${nf.format(r + 1)} sur ${nf.format(view.total)}`;
