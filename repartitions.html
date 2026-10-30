@@ -319,7 +319,16 @@ button { font: inherit; color: inherit; }
   font-size: 12px; font-weight: 600;
   text-transform: uppercase; letter-spacing: .08em;
 }
-.step-range { width: 100%; margin: 0; accent-color: var(--ink); }
+.step-sub { margin: -8px 0 0; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.step-track { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.step-bar { width: 0; height: 100%; border-radius: 3px; background: var(--ink); transition: width .2s ease-out; }
+.step-done {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--hl);
+  font-weight: 500;
+}
 .step-card {
   display: grid;
   grid-template-columns: minmax(0, var(--fa, 1fr)) minmax(0, var(--fb, 1fr));
@@ -364,6 +373,7 @@ button { font: inherit; color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   .toast { transition: none; }
   .pick.fresh, .step-card.enter-next, .step-card.enter-prev { animation: none; }
+  .step-bar { transition: none; }
 }
 </style>
 
@@ -446,14 +456,18 @@ button { font: inherit; color: inherit; }
 
         <div class="stepper" id="step-view" hidden>
           <div class="step-top">
-            <div class="step-count" aria-live="polite"><span class="sr">Répartition </span><span id="step-n"></span><span class="of"> / <span id="step-t"></span></span></div>
+            <div class="step-count" aria-live="polite"><span class="sr">Répartition vue </span><span id="step-n"></span><span class="of"> / <span id="step-t"></span></span></div>
             <span class="step-badge" id="step-badge" hidden>Tirée au sort</span>
           </div>
-          <label class="sr" for="step-range">Aller à la répartition</label>
-          <input type="range" id="step-range" class="step-range" min="1" value="1">
+          <p class="step-sub" id="step-rank"></p>
+          <div class="step-track" aria-hidden="true"><div class="step-bar" id="step-bar"></div></div>
           <div class="step-card" id="step-card">
             <div class="step-group step-a"><span class="h h-a" id="sh-a"></span><div class="grp" id="step-a"></div></div>
             <div class="step-group step-b"><span class="h h-b" id="sh-b"></span><div class="grp" id="step-b"></div></div>
+          </div>
+          <div class="step-done" id="step-done" hidden>
+            <span id="step-done-text"></span>
+            <button type="button" class="btn btn-ghost" id="restart">Recommencer</button>
           </div>
           <div class="step-nav">
             <button type="button" class="btn btn-ghost" id="prev">← Précédente</button>
@@ -497,8 +511,9 @@ button { font: inherit; color: inherit; }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };
 
   // cursor: the combination (indices of group A) of the next row to render
-  // step: the rank shown in the one-by-one view
-  const view = { cursor: [], shown: 0, total: 0, picked: -1, step: 0 };
+  // One-by-one view: seq is the order répartitions were shown in (each rank at most once),
+  // pos the index in seq on screen, seen the ranks in seq, drawn those that came from a draw.
+  const view = { cursor: [], shown: 0, total: 0, picked: -1, seq: [], pos: -1, seen: new Set(), drawn: new Set() };
 
   function binom(n, k) {
     if (k < 0 || k > n) return 0;
@@ -667,7 +682,7 @@ button { font: inherit; color: inherit; }
     $('h-a').textContent = $('sh-a').textContent = `Groupe A · ${a} ${plural(a, 'personne', 'personnes')}`;
     $('h-b').textContent = $('sh-b').textContent = `Groupe B · ${b} ${plural(b, 'personne', 'personnes')}`;
     $('copy').textContent = T > COPY_MAX ? `Copier les ${nf.format(COPY_MAX)} premières` : 'Copier la liste';
-    view.step = 0;
+    resetSteps();
     renderPage();
     applyMode();
   }
@@ -690,24 +705,55 @@ button { font: inherit; color: inherit; }
       : `${plural(view.total, 'Répartition affichée', `Les ${nf.format(view.total)} répartitions sont affichées`)}`;
   }
 
+  function markPicked(r) {
+    const list = $('list');
+    const prev = list.querySelector('.picked');
+    if (prev) prev.classList.remove('picked');
+    view.picked = r;
+    const row = list.children[r];
+    if (row) row.classList.add('picked');
+    return row;
+  }
+
+  function resetSteps() {
+    view.seq = [];
+    view.pos = -1;
+    view.seen = new Set();
+    view.drawn = new Set();
+  }
+
+  function startSteps(r, drawn) {
+    resetSteps();
+    view.seq = [r];
+    view.pos = 0;
+    view.seen.add(r);
+    if (drawn) view.drawn.add(r);
+  }
+
   function renderStep(dir) {
-    const n = state.names.length, T = view.total, r = view.step;
+    const n = state.names.length, T = view.total, r = view.seq[view.pos];
     const [A, B] = groupsOf(unrankComb(r, n, state.a));
     fillGroup($('step-a'), A, 'a');
     fillGroup($('step-b'), B, 'b');
-    $('step-n').textContent = nf.format(r + 1);
+    $('step-n').textContent = nf.format(view.pos + 1);
     $('step-t').textContent = nf.format(T);
-    const range = $('step-range');
-    range.max = T;
-    range.value = r + 1;
-    range.hidden = T < 2;
+    $('step-rank').textContent = `N° ${nf.format(r + 1)} dans la liste · aucune répartition n’est montrée deux fois`;
+    $('step-bar').style.width = `${(100 * view.seen.size) / T}%`;
+    const done = view.seen.size >= T;
     const focused = document.activeElement;
-    $('prev').disabled = r <= 0;
-    $('next').disabled = r >= T - 1;
-    // Keep keyboard focus on a usable button when one end of the list is reached.
-    if (focused === $('prev') && $('prev').disabled && !$('next').disabled) $('next').focus();
-    if (focused === $('next') && $('next').disabled && !$('prev').disabled) $('prev').focus();
-    $('step-badge').hidden = r !== view.picked;
+    $('prev').disabled = view.pos <= 0;
+    $('next').disabled = done && view.pos === view.seq.length - 1;
+    $('draw').disabled = done;
+    $('step-done').hidden = !done;
+    $('step-done-text').textContent = T > 1
+      ? `Les ${nf.format(T)} répartitions ont toutes été vues.`
+      : 'La seule répartition possible a été vue.';
+    // Keep keyboard focus on a usable button when the one in use gets disabled.
+    if (focused && focused.disabled) {
+      const target = [$('restart'), $('next'), $('prev')].find((b) => !b.disabled && !b.closest('[hidden]'));
+      if (target) target.focus();
+    }
+    $('step-badge').hidden = !view.drawn.has(r);
     if (dir && !reduceMotion) {
       const card = $('step-card');
       card.classList.remove('enter-next', 'enter-prev');
@@ -721,17 +767,52 @@ button { font: inherit; color: inherit; }
     $('list-view').hidden = step;
     $('step-view').hidden = !step;
     $('mode').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === state.mode)));
+    $('draw').disabled = false;
     if (step) {
       $('pick').hidden = true;
+      if (!view.seq.length) startSteps(Math.max(view.picked, 0), view.picked >= 0);
       renderStep(0);
     }
   }
 
-  function go(delta) {
-    const r = Math.min(view.total - 1, Math.max(0, view.step + delta));
-    if (r === view.step) return;
-    view.step = r;
-    renderStep(delta);
+  function prevStep() {
+    if (view.pos <= 0) return;
+    view.pos--;
+    renderStep(-1);
+  }
+
+  // Replays what was already shown, then moves on to the next répartition not seen yet.
+  function nextStep() {
+    if (view.pos < view.seq.length - 1) {
+      view.pos++;
+      renderStep(1);
+      return;
+    }
+    if (view.seen.size >= view.total) return;
+    let r = view.seq[view.pos];
+    do { r = (r + 1) % view.total; } while (view.seen.has(r));
+    showNew(r, false);
+  }
+
+  function showNew(r, drawn) {
+    view.seq.push(r);
+    view.seen.add(r);
+    if (drawn) view.drawn.add(r);
+    view.pos = view.seq.length - 1;
+    renderStep(1);
+  }
+
+  function randomUnseen() {
+    const T = view.total, seen = view.seen;
+    if (seen.size * 2 < T) {
+      let r;
+      do { r = Math.floor(Math.random() * T); } while (seen.has(r));
+      return r;
+    }
+    // Over half seen means T is at most twice the number of clicks so far: list what is left.
+    const free = [];
+    for (let r = 0; r < T; r++) if (!seen.has(r)) free.push(r);
+    return free[Math.floor(Math.random() * free.length)];
   }
 
   function update() {
@@ -849,21 +930,30 @@ button { font: inherit; color: inherit; }
     applyMode();
   });
 
-  $('prev').addEventListener('click', () => go(-1));
-  $('next').addEventListener('click', () => go(1));
-  $('step-range').addEventListener('input', (e) => {
-    view.step = Number(e.target.value) - 1;
+  $('prev').addEventListener('click', prevStep);
+  $('next').addEventListener('click', nextStep);
+  $('restart').addEventListener('click', () => {
+    startSteps(0, false);
     renderStep(0);
+    $('next').focus();
   });
 
   document.addEventListener('keydown', (e) => {
     if (state.mode !== 'step' || $('results-body').hidden || e.altKey || e.ctrlKey || e.metaKey) return;
     if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
-    if (e.key === 'ArrowRight') { e.preventDefault(); go(1); }
-    else if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); nextStep(); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); prevStep(); }
   });
 
   $('draw').addEventListener('click', () => {
+    if (state.mode === 'step') {
+      if (view.seen.size < view.total) {
+        const r = randomUnseen();
+        markPicked(r);
+        showNew(r, true);
+      }
+      return;
+    }
     const n = state.names.length, a = state.a;
     const idx = Array.from({ length: n }, (_, i) => i);
     for (let i = 0; i < a; i++) {
@@ -876,19 +966,7 @@ button { font: inherit; color: inherit; }
       combo = Array.from({ length: n }, (_, i) => i).filter((i) => !inA.has(i));
     }
     const r = rankComb(combo, n);
-    const list = $('list');
-    const prev = list.querySelector('.picked');
-    if (prev) prev.classList.remove('picked');
-    view.picked = r;
-    const row = list.children[r];
-    if (row) row.classList.add('picked');
-
-    const dir = r >= view.step ? 1 : -1;
-    view.step = r;
-    if (state.mode === 'step') {
-      renderStep(dir);
-      return;
-    }
+    const row = markPicked(r);
 
     const [A, B] = groupsOf(combo);
     $('pick-num').textContent = `Répartition n° ${nf.format(r + 1)} sur ${nf.format(view.total)}`;
